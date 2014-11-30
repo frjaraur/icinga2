@@ -259,8 +259,3 @@ void ConfigCompiler::AddIncludeSearchDir(const String& dir)
 	m_IncludeSearchDirs.push_back(dir);
 }
 
-ConfigFragmentRegistry *ConfigFragmentRegistry::GetInstance(void)
-{
-	return Singleton<ConfigFragmentRegistry>::GetInstance();
-}
-

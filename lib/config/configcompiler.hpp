@@ -22,7 +22,6 @@
 
 #include "config/i2-config.hpp"
 #include "config/expression.hpp"
-#include "config/configtype.hpp"
 #include "base/debuginfo.hpp"
 #include "base/registry.hpp"
 #include "base/initialize.hpp"
@@ -73,10 +72,6 @@ public:
 	static void CollectIncludes(std::vector<Expression *>& expressions, const String& file, const String& zone);
 
 	/* internally used methods */
-	Expression *HandleInclude(const String& include, bool search, const DebugInfo& debuginfo = DebugInfo());
-	Expression *HandleIncludeRecursive(const String& path, const String& pattern, const DebugInfo& debuginfo = DebugInfo());
-	void HandleLibrary(const String& library);
-
 	size_t ReadInput(char *buffer, size_t max_bytes);
 	void *GetScanner(void) const;
 
@@ -92,9 +87,6 @@ private:
 
 	int m_IgnoreNewlines;
 	std::ostringstream m_LexBuffer;
-
-	std::stack<TypeRuleList::Ptr> m_RuleLists;
-	ConfigType::Ptr m_Type;
 
 	std::stack<bool> m_Apply;
 	std::stack<bool> m_ObjectAssign;
@@ -112,25 +104,13 @@ private:
 
 	void CompileHelper(void);
 
+	Expression *HandleInclude(const String& include, bool search, const DebugInfo& debuginfo = DebugInfo());
+	Expression *HandleIncludeRecursive(const String& path, const String& pattern, const DebugInfo& debuginfo = DebugInfo());
+	void HandleLibrary(const String& library);
+
 	friend int ::yylex(YYSTYPE *context, icinga::DebugInfo *di, yyscan_t scanner);
 	friend int ::yyparse(std::vector<icinga::Expression *> *elist, ConfigCompiler *context);
 };
-
-class I2_CONFIG_API ConfigFragmentRegistry : public Registry<ConfigFragmentRegistry, String>
-{
-public:
-	static ConfigFragmentRegistry *GetInstance(void);
-};
-
-#define REGISTER_CONFIG_FRAGMENT(id, name, fragment) \
-	namespace { \
-		void RegisterConfigFragment(void) \
-		{ \
-			icinga::ConfigFragmentRegistry::GetInstance()->Register(name, fragment); \
-		} \
-		\
-		INITIALIZE_ONCE(RegisterConfigFragment); \
-	}
 
 }
 

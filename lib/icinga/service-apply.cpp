@@ -26,7 +26,6 @@
 #include "base/logger.hpp"
 #include "base/context.hpp"
 #include "base/workqueue.hpp"
-#include "base/scripterror.hpp"
 #include <boost/foreach.hpp>
 
 using namespace icinga;
@@ -133,11 +132,7 @@ void Service::EvaluateApplyRules(const Host::Ptr& host)
 	BOOST_FOREACH(ApplyRule& rule, ApplyRule::GetRules("Service")) {
 		CONTEXT("Evaluating 'apply' rules for host '" + host->GetName() + "'");
 
-		try {
-			if (EvaluateApplyRule(host, rule))
-				rule.AddMatch();
-		} catch (const ScriptError& ex) {
-			ConfigCompilerContext::GetInstance()->AddMessage(true, ex.what(), ex.GetDebugInfo());
-		}
+		if (EvaluateApplyRule(host, rule))
+			rule.AddMatch();
 	}
 }

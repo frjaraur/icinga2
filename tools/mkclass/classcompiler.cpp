@@ -77,6 +77,8 @@ void ClassCompiler::HandleNamespaceBegin(const std::string& name, const ClassDeb
 
 void ClassCompiler::HandleNamespaceEnd(const ClassDebugInfo&)
 {
+	HandleMissingValidators();
+
 	std::cout << "}" << std::endl;
 }
 
@@ -94,16 +96,16 @@ unsigned long ClassCompiler::SDBM(const std::string& str, size_t len = std::stri
 
 	for (it = str.begin(); it != str.end(); it++) {
 		if (current >= len)
-                        break;
+			break;
 
 		char c = *it;
 
-                hash = c + (hash << 6) + (hash << 16) - hash;
+		hash = c + (hash << 6) + (hash << 16) - hash;
 
-                current++;
-        }
+		current++;
+	}
 
-        return hash;
+	return hash;
 }
 
 static int TypePreference(const std::string& type)
@@ -124,12 +126,12 @@ static int TypePreference(const std::string& type)
 
 static bool FieldLayoutCmp(const Field& a, const Field& b)
 {
-	return TypePreference(a.Type) < TypePreference(b.Type);
+	return TypePreference(a.Type.GetRealType()) < TypePreference(b.Type.GetRealType());
 }
 
 static bool FieldTypeCmp(const Field& a, const Field& b)
 {
-	return a.Type < b.Type;
+	return a.Type.GetRealType() < b.Type.GetRealType();
 }
 
 void ClassCompiler::OptimizeStructLayout(std::vector<Field>& fields)
@@ -297,7 +299,10 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 
 		size_t num = 0;
 		for (it = klass.Fields.begin(); it != klass.Fields.end(); it++) {
-			std::string ftype = it->Type;
+			std::string ftype = it->Type.GetRealType();
+
+			if (ftype == "bool" || ftype == "int" || ftype == "double")
+				ftype = "Number";
 
 			if (ftype == "int" || ftype == "double")
 				ftype = "Number";
@@ -310,8 +315,15 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 			if (it->Attributes & FAEnum)
 				ftype = "Number";
 
+			std::string nameref;
+
+			if (it->Type.IsName)
+				nameref = "\"" + it->Type.TypeName + "\"";
+			else
+				nameref = "NULL";
+
 			std::cout << "\t\t\t" << "case " << num << ":" << std::endl
-				<< "\t\t\t\t" << "return Field(" << num << ", \"" << ftype << "\", \"" << it->Name << "\", " << it->Attributes << ");" << std::endl;
+				<< "\t\t\t\t" << "return Field(" << num << ", \"" << ftype << "\", \"" << it->Name << "\", " << nameref << ", " << it->Attributes << ");" << std::endl;
 			num++;
 		}
 
@@ -351,6 +363,9 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 
 	std::cout << "};" << std::endl << std::endl;
 
+	/* Validator forward decl */
+	std::cout << "void TIValidate" << klass.Name << "(void);" << std::endl << std::endl;
+
 	/* ObjectImpl */
 	std::cout << "template<>" << std::endl
 		  << "class ObjectImpl<" << klass.Name << ">"
@@ -358,6 +373,41 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 		  << "{" << std::endl
 		  << "public:" << std::endl
 		  << "\t" << "DECLARE_PTR_TYPEDEFS(ObjectImpl<" << klass.Name << ">);" << std::endl;
+
+	/* Validate */
+	std::cout << "\t" << "virtual void Validate(const ValidationUtils& utils) const" << std::endl
+		<< "\t" << "{" << std::endl;
+
+	if (!klass.Parent.empty())
+		std::cout << "\t\t" << klass.Parent << "::Validate(utils);" << std::endl << std::endl;
+
+	std::cout << "\t\tValue value;" << std::endl
+		  << "\t\tString ref;" << std::endl << std::endl;
+
+	for (it = klass.Fields.begin(); it != klass.Fields.end(); it++) {
+		const Field& field = *it;
+
+		if (!(field.Attributes & (FARequired)) && !field.Type.IsName)
+			continue;
+
+		std::cout << "\t\t" << "value = Get" << field.GetFriendlyName() << "();" << std::endl;
+
+		if (field.Attributes & FARequired) {
+			std::cout << "\t\t" << "if (value.IsEmpty() || (value.IsString() && static_cast<String>(value).IsEmpty()))" << std::endl
+				  << "\t\t\t" << "BOOST_THROW_EXCEPTION(ScriptError(\"Attribute '" << field.Name << "' must not be empty.\", GetDebugInfo()));" << std::endl << std::endl;
+
+		}
+
+		if (field.Type.IsName) {
+			std::cout << "\t\t" << "ref = value;" << std::endl
+				  << "\t\t" << "if (!ref.IsEmpty() && !utils.ValidateName(\"" << field.Type.TypeName << "\", ref))" << std::endl
+				  << "\t\t\t" << "BOOST_THROW_EXCEPTION(ScriptError(\"Attribute '" << field.Name << "': object '\" + ref + \"' of type '" << field.Type.TypeName
+				  << "' does not exist.\", GetDebugInfo()));" << std::endl << std::endl;
+		}
+	}
+
+	std::cout << "\t\t" << "TIValidate" << klass.Name << "(*this, utils);" << std::endl
+		<< "\t" << "}" << std::endl << std::endl;
 
 	if (!klass.Fields.empty()) {
 		/* constructor */
@@ -378,7 +428,7 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 
 		if (!klass.Parent.empty())
 			std::cout << "\t\t" << "int real_id = id - TypeImpl<" << klass.Parent << ">::StaticGetFieldCount(); " << std::endl
-			          << "\t\t" << "if (real_id < 0) { " << klass.Parent << "::SetField(id, value); return; }" << std::endl;
+				  << "\t\t" << "if (real_id < 0) { " << klass.Parent << "::SetField(id, value); return; }" << std::endl;
 
 		std::cout << "\t\t" << "switch (";
 
@@ -395,7 +445,7 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 					  << "\t\t\t\t" << "Set" << it->GetFriendlyName() << "(";
 			
 			if (it->Attributes & FAEnum)
-				std::cout << "static_cast<" << it->Type << ">(static_cast<int>(";
+				std::cout << "static_cast<" << it->Type.GetRealType() << ">(static_cast<int>(";
 
 			std::cout << "value";
 			
@@ -454,7 +504,7 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 				prot = "public";
 
 			std::cout << prot << ":" << std::endl
-					  << "\t" << it->Type << " Get" << it->GetFriendlyName() << "(void) const" << std::endl
+					  << "\t" << it->Type.GetRealType() << " Get" << it->GetFriendlyName() << "(void) const" << std::endl
 					  << "\t" << "{" << std::endl;
 
 			if (it->GetAccessor.empty())
@@ -479,10 +529,12 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 			std::cout << prot << ":" << std::endl
 					  << "\t" << "void Set" << it->GetFriendlyName() << "(";
 
-			if (it->Type == "bool" || it->Type == "double" || it->Type == "int")
-				std::cout << it->Type;
+			std::string realType = it->Type.GetRealType();
+
+			if (realType == "bool" || realType == "double" || realType == "int")
+				std::cout << realType;
 			else
-				std::cout << "const " << it->Type << "&";
+				std::cout << "const " << realType << "&";
 
 			std::cout << " value)" << std::endl
 					  << "\t" << "{" << std::endl;
@@ -499,12 +551,14 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 		for (it = klass.Fields.begin(); it != klass.Fields.end(); it++) {
 			std::string prot;
 
+			std::string realType = it->Type.GetRealType();
+
 			std::cout << "private:" << std::endl
-					  << "\t" << it->Type << " GetDefault" << it->GetFriendlyName() << "(void) const" << std::endl
+					  << "\t" << realType << " GetDefault" << it->GetFriendlyName() << "(void) const" << std::endl
 					  << "\t" << "{" << std::endl;
 
 			if (it->DefaultAccessor.empty())
-				std::cout << "\t\t" << "return " << it->Type << "();" << std::endl;
+				std::cout << "\t\t" << "return " << realType << "();" << std::endl;
 			else
 				std::cout << it->DefaultAccessor << std::endl;
 
@@ -515,7 +569,7 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 		std::cout << "private:" << std::endl;
 
 		for (it = klass.Fields.begin(); it != klass.Fields.end(); it++) {
-			std::cout << "\t" << it->Type << " m_" << it->GetFriendlyName() << ";" << std::endl;
+			std::cout << "\t" << it->Type.GetRealType() << " m_" << it->GetFriendlyName() << ";" << std::endl;
 		}
 	}
 
@@ -525,7 +579,31 @@ void ClassCompiler::HandleClass(const Klass& klass, const ClassDebugInfo&)
 	if (!klass.TypeBase.empty())
 		std::cout << "\t" << "friend class " << klass.TypeBase << ";" << std::endl;
 
+	std::cout << "\t" << "friend void TIValidate" << klass.Name << "(const ObjectImpl<" << klass.Name << ">& object, const ValidationUtils& utils);" << std::endl;
+
 	std::cout << "};" << std::endl << std::endl;
+
+	m_MissingValidators.insert(klass.Name);
+}
+
+void ClassCompiler::HandleValidator(const Validator& validator, const ClassDebugInfo&)
+{
+	m_MissingValidators.erase(validator.Name);
+
+	std::cout << "inline void TIValidate" << validator.Name << "(const ObjectImpl<" << validator.Name << ">& object, const ValidationUtils& utils)" << std::endl
+		  << "{" << std::endl;
+
+	std::cout << "}" << std::endl << std::endl;
+}
+
+void ClassCompiler::HandleMissingValidators(void)
+{
+	for (std::set<std::string>::const_iterator it = m_MissingValidators.begin(); it != m_MissingValidators.end(); it++) {
+		std::cout << "inline void TIValidate" << *it << "(const ObjectImpl<" << *it << ">& object, const ValidationUtils& utils)" << std::endl
+			  << "{ }" << std::endl << std::endl;
+	}
+
+	m_MissingValidators.clear();
 }
 
 void ClassCompiler::CompileFile(const std::string& path)
@@ -587,6 +665,7 @@ void ClassCompiler::CompileStream(const std::string& path, std::istream *stream)
 			  << "#include \"base/value.hpp\"" << std::endl
 			  << "#include \"base/array.hpp\"" << std::endl
 			  << "#include \"base/dictionary.hpp\"" << std::endl
+			  << "#include \"base/exception.hpp\"" << std::endl
 			  << "#include \"base/utility.hpp\"" << std::endl << std::endl
 			  << "#ifdef _MSC_VER" << std::endl
 			  << "#pragma warning( push )" << std::endl

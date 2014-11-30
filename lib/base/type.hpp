@@ -33,7 +33,8 @@ enum FieldAttribute
 {
 	FAConfig = 1,
 	FAState = 2,
-	FAInternal = 32
+	FAInternal = 32,
+	FARequired = 64
 }; 
 
 class Type;
@@ -43,16 +44,23 @@ struct Field
 	int ID;
 	const char *TypeName;
 	const char *Name;
+	const char *RefTypeName;
 	int Attributes;
 
-	Field(int id, const char *type, const char *name, int attributes)
-		: ID(id), TypeName(type), Name(name), Attributes(attributes)
+	Field(int id, const char *type, const char *name, const char *reftype, int attributes)
+		: ID(id), TypeName(type), Name(name), RefTypeName(reftype), Attributes(attributes)
 	{ }
 };
 
 enum TypeAttribute
 {
 	TAAbstract = 1
+};
+
+class ValidationUtils
+{
+public:
+	virtual bool ValidateName(const String& type, const String& name) const = 0;
 };
 
 class I2_BASE_API Type : public Object

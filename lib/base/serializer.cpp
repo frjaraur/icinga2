@@ -54,7 +54,6 @@ static Dictionary::Ptr SerializeDictionary(const Dictionary::Ptr& input, int att
 static Object::Ptr SerializeObject(const Object::Ptr& input, int attributeTypes)
 {
 	Type::Ptr type = input->GetReflectionType();
-
 	VERIFY(type);
 
 	Dictionary::Ptr fields = new Dictionary();

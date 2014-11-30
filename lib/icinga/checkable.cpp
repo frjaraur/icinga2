@@ -21,14 +21,12 @@
 #include "config/configcompilercontext.hpp"
 #include "base/objectlock.hpp"
 #include "base/utility.hpp"
-#include "base/scriptfunction.hpp"
 #include <boost/foreach.hpp>
 #include <boost/bind/apply.hpp>
 
 using namespace icinga;
 
 REGISTER_TYPE(Checkable);
-REGISTER_SCRIPTFUNCTION(ValidateCheckableCheckInterval, &Checkable::ValidateCheckInterval);
 
 boost::signals2::signal<void (const Checkable::Ptr&, bool, const MessageOrigin&)> Checkable::OnEnablePerfdataChanged;
 boost::signals2::signal<void (const Checkable::Ptr&, const String&, const String&, AcknowledgementType, double, const MessageOrigin&)> Checkable::OnAcknowledgementSet;
@@ -267,10 +265,8 @@ Endpoint::Ptr Checkable::GetCommandEndpoint(void) const
 	return Endpoint::GetByName(GetCommandEndpointRaw());
 }
 
-void Checkable::ValidateCheckInterval(const String& location, const Checkable::Ptr& object)
+void Checkable::Validate(const ValidationUtils& utils) const
 {
-	if (object->GetCheckInterval() <= 0) {
-		ConfigCompilerContext::GetInstance()->AddMessage(true, "Validation failed for " +
-		    location + ": check_interval must be greater than 0.");
-	}
+	if (GetCheckInterval() <= 0)
+		BOOST_THROW_EXCEPTION(ScriptError("Validation failed: check_interval must be greater than 0.", GetDebugInfo()));
 }

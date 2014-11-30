@@ -204,10 +204,8 @@ int Main(void)
 
 	String initconfig = Application::GetSysconfDir() + "/icinga2/init.conf";
 
-	if (Utility::PathExists(initconfig)) {
-		ConfigCompilerContext::GetInstance()->Reset();
+	if (Utility::PathExists(initconfig))
 		ConfigCompiler::CompileFile(initconfig);
-	}
 
 #ifndef _WIN32
 	if (vm.count("color")) {

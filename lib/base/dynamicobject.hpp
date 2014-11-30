@@ -52,9 +52,6 @@ public:
 
 	intrusive_ptr<DynamicType> GetType(void) const;
 
-	DebugInfo GetDebugInfo(void) const;
-	void SetDebugInfo(const DebugInfo& di);
-
 	bool IsActive(void) const;
 	bool IsPaused(void) const;
 

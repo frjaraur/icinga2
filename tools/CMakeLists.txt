@@ -16,6 +16,5 @@
 # Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 
 add_subdirectory(mkclass)
-add_subdirectory(mkembedconfig)
 add_subdirectory(mkunity)
 

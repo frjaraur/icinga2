@@ -25,7 +25,6 @@
 #include "base/array.hpp"
 #include "base/dictionary.hpp"
 #include "base/scriptfunction.hpp"
-#include "base/scripterror.hpp"
 #include "base/scriptframe.hpp"
 #include "base/convert.hpp"
 #include <boost/foreach.hpp>

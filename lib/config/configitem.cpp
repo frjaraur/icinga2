@@ -21,7 +21,6 @@
 #include "config/configcompilercontext.hpp"
 #include "config/applyrule.hpp"
 #include "config/objectrule.hpp"
-#include "config/configtype.hpp"
 #include "base/application.hpp"
 #include "base/dynamictype.hpp"
 #include "base/objectlock.hpp"
@@ -34,7 +33,6 @@
 #include "base/netstring.hpp"
 #include "base/serializer.hpp"
 #include "base/json.hpp"
-#include "base/scripterror.hpp"
 #include <sstream>
 #include <fstream>
 #include <boost/foreach.hpp>
@@ -132,6 +130,15 @@ boost::shared_ptr<Expression> ConfigItem::GetFilter(void) const
 	return m_Filter;
 }
 
+class DefaultValidationUtils : public ValidationUtils
+{
+public:
+	virtual bool ValidateName(const String& type, const String& name) const
+	{
+		return ConfigItem::GetObject(type, name) != ConfigItem::Ptr();
+	}
+};
+
 /**
  * Commits the configuration item by creating a DynamicObject
  * object.
@@ -163,15 +170,9 @@ DynamicObject::Ptr ConfigItem::Commit(bool discard)
 
 	DebugHint debugHints;
 
-	try {
-		ScriptFrame frame(dobj);
-		frame.Locals = m_Scope;
-		m_Expression->Evaluate(frame, &debugHints);
-	} catch (const ScriptError& ex) {
-		ConfigCompilerContext::GetInstance()->AddMessage(true, ex.what(), ex.GetDebugInfo());
-	} catch (const std::exception& ex) {
-		ConfigCompilerContext::GetInstance()->AddMessage(true, DiagnosticInformation(ex));
-	}
+	ScriptFrame frame(dobj);
+	frame.Locals = m_Scope;
+	m_Expression->Evaluate(frame, &debugHints);
 
 	if (discard)
 		m_Expression.reset();
@@ -219,21 +220,7 @@ DynamicObject::Ptr ConfigItem::Commit(bool discard)
 	ConfigCompilerContext::GetInstance()->WriteObject(persistentItem);
 	persistentItem.reset();
 
-	ConfigType::Ptr ctype = ConfigType::GetByName(GetType());
-
-	if (!ctype)
-		ConfigCompilerContext::GetInstance()->AddMessage(false, "No validation type found for object '" + GetName() + "' of type '" + GetType() + "'");
-	else {
-		TypeRuleUtilities utils;
-
-		try {
-			ctype->ValidateItem(GetName(), dobj, GetDebugInfo(), &utils);
-		} catch (const ScriptError& ex) {
-			ConfigCompilerContext::GetInstance()->AddMessage(true, ex.what(), ex.GetDebugInfo());
-		} catch (const std::exception& ex) {
-			ConfigCompilerContext::GetInstance()->AddMessage(true, DiagnosticInformation(ex));
-		}
-	}
+	dobj->Validate(DefaultValidationUtils());
 
 	dobj->Register();
 
@@ -286,7 +273,7 @@ ConfigItem::Ptr ConfigItem::GetObject(const String& type, const String& name)
 	}
 }
 
-bool ConfigItem::CommitNewItems(ParallelWorkQueue& upq)
+bool ConfigItem::CommitNewItems(WorkQueue& upq)
 {
 	typedef std::pair<ConfigItem::Ptr, bool> ItemPair;
 	std::vector<ItemPair> items;
@@ -319,7 +306,7 @@ bool ConfigItem::CommitNewItems(ParallelWorkQueue& upq)
 
 		upq.Join();
 
-		if (ConfigCompilerContext::GetInstance()->HasErrors())
+		if (upq.HasExceptions())
 			return false;
 
 		std::vector<ConfigItem::Ptr> new_items;
@@ -339,23 +326,30 @@ bool ConfigItem::CommitNewItems(ParallelWorkQueue& upq)
 	return true;
 }
 
-bool ConfigItem::ValidateItems(void)
+bool ConfigItem::CommitItems(void)
 {
-	ParallelWorkQueue upq;
-
-	if (ConfigCompilerContext::GetInstance()->HasErrors())
-		return false;
+	WorkQueue upq(25000, Application::GetConcurrency());
 
 	Log(LogInformation, "ConfigItem", "Committing config items");
 
-	if (!CommitNewItems(upq))
+	if (!CommitNewItems(upq)) {
+		std::vector<boost::exception_ptr> exceptions = upq.GetExceptions();
+
+		BOOST_FOREACH(const boost::exception_ptr& eptr, exceptions) {
+			Log(LogCritical, "config")
+			    << DiagnosticInformation(eptr);
+		}
+
+		Log(LogCritical, "config")
+		    << exceptions.size() << " error" << (exceptions.size() != 0 ? "(s)" : "");
+
 		return false;
+	}
 
 	ApplyRule::CheckMatches();
 	ApplyRule::DiscardRules();
 
-	ConfigItem::DiscardItems();
-	ConfigType::DiscardTypes();
+	m_Items.clear();
 
 	/* log stats for external parsers */
 	BOOST_FOREACH(const DynamicType::Ptr& type, DynamicType::GetTypes()) {
@@ -365,14 +359,11 @@ bool ConfigItem::ValidateItems(void)
 			    << "Checked " << count << " " << type->GetName() << "(s).";
 	}
 
-	return !ConfigCompilerContext::GetInstance()->HasErrors();
+	return true;
 }
 
 bool ConfigItem::ActivateItems(void)
 {
-	if (ConfigCompilerContext::GetInstance()->HasErrors())
-		return false;
-
 	/* restore the previous program state */
 	try {
 		DynamicObject::RestoreObjects(Application::GetStatePath());
@@ -383,7 +374,7 @@ bool ConfigItem::ActivateItems(void)
 
 	Log(LogInformation, "ConfigItem", "Triggering Start signal for config items");
 
-	ParallelWorkQueue upq;
+	WorkQueue upq(25000, Application::GetConcurrency());
 
 	BOOST_FOREACH(const DynamicType::Ptr& type, DynamicType::GetTypes()) {
 		BOOST_FOREACH(const DynamicObject::Ptr& object, type->GetObjects()) {
@@ -411,13 +402,6 @@ bool ConfigItem::ActivateItems(void)
 	Log(LogInformation, "ConfigItem", "Activated all objects.");
 
 	return true;
-}
-
-void ConfigItem::DiscardItems(void)
-{
-	boost::mutex::scoped_lock lock(m_Mutex);
-
-	m_Items.clear();
 }
 
 std::vector<ConfigItem::Ptr> ConfigItem::GetItems(const String& type)

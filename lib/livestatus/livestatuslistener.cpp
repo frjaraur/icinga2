@@ -19,7 +19,6 @@
 
 #include "livestatus/livestatuslistener.hpp"
 #include "icinga/perfdatavalue.hpp"
-#include "config/configcompilercontext.hpp"
 #include "base/utility.hpp"
 #include "base/objectlock.hpp"
 #include "base/dynamictype.hpp"
@@ -36,7 +35,6 @@
 using namespace icinga;
 
 REGISTER_TYPE(LivestatusListener);
-REGISTER_SCRIPTFUNCTION(ValidateSocketType, &LivestatusListener::ValidateSocketType);
 
 static int l_ClientsConnected = 0;
 static int l_Connections = 0;
@@ -183,12 +181,13 @@ void LivestatusListener::ClientHandler(const Socket::Ptr& client)
 }
 
 
-void LivestatusListener::ValidateSocketType(const String& location, const LivestatusListener::Ptr& object)
+void LivestatusListener::Validate(const ValidationUtils& utils) const
 {
-	String socket_type = object->GetSocketType();
+	ObjectImpl<LivestatusListener>::Validate(utils);
+
+	String socket_type = GetSocketType();
 
 	if (socket_type != "unix" && socket_type != "tcp") {
-		ConfigCompilerContext::GetInstance()->AddMessage(true, "Validation failed for " +
-		    location + ": Socket type '" + socket_type + "' is invalid.");
+		BOOST_THROW_EXCEPTION(ScriptError("Validation failed: Socket type '" + socket_type + "' is invalid.", GetDebugInfo()));
 	}
 }

@@ -17,11 +17,9 @@
 
 mkclass_target(dbconnection.ti dbconnection.thpp)
 
-mkembedconfig_target(db_ido-type.conf db_ido-type.cpp)
-
 set(db_ido_SOURCES
   commanddbobject.cpp dbconnection.cpp dbconnection.thpp dbconnection.thpp
-  db_ido-type.cpp dbevents.cpp dbobject.cpp dbquery.cpp dbreference.cpp dbtype.cpp
+  dbevents.cpp dbobject.cpp dbquery.cpp dbreference.cpp dbtype.cpp
   dbvalue.cpp endpointdbobject.cpp hostdbobject.cpp hostgroupdbobject.cpp
   servicedbobject.cpp servicegroupdbobject.cpp timeperioddbobject.cpp
   userdbobject.cpp usergroupdbobject.cpp

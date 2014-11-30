@@ -27,11 +27,36 @@ abstract class Command : CustomVarObject
 {
 	[config] Value command (CommandLine);
 	[config] Value arguments;
-	[config] Value timeout {
+	[config] int timeout {
 		default {{{ return 60; }}}
 	};
 	[config] Dictionary::Ptr env;
-	[config] ScriptFunction::Ptr execute;
+	[config, required] ScriptFunction::Ptr execute;
+};
+
+validator Command {
+	String command;
+	Array command {
+		String "*";
+	};
+
+	Dictionary arguments {
+		String "*";
+		Dictionary "*" {
+			String key;
+			String value;
+			String description;
+			Number "required";
+			Number skip_key;
+			Number repeat_key;
+			String set_if;
+			Number order;
+		};
+	};
+
+	Dictionary env {
+		String "*";
+	};
 };
 
 }

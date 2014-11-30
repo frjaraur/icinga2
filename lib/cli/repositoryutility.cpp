@@ -19,9 +19,6 @@
 
 #include "cli/repositoryutility.hpp"
 #include "cli/clicommand.hpp"
-#include "config/configtype.hpp"
-#include "config/configcompilercontext.hpp"
-#include "config/configcompiler.hpp"
 #include "base/logger.hpp"
 #include "base/application.hpp"
 #include "base/convert.hpp"
@@ -190,10 +187,10 @@ void RepositoryUtility::PrintChangeLog(std::ostream& fp)
 	}
 }
 
-class RepositoryTypeRuleUtilities : public TypeRuleUtilities
+class RepositoryValidationUtils : public ValidationUtils
 {
 public:
-	virtual bool ValidateName(const String& type, const String& name, String *hint) const
+	virtual bool ValidateName(const String& type, const String& name) const
 	{
 		return true;
 	}
@@ -229,54 +226,16 @@ bool RepositoryUtility::AddObject(const String& name, const String& type, const 
 	change->Set("command", "add");
 	change->Set("attrs", attrs);
 
-	ConfigCompilerContext::GetInstance()->Reset();
+	Type::Ptr utype = Type::GetByName(type);
+	ASSERT(utype);
 
-	String fname, fragment;
-	BOOST_FOREACH(boost::tie(fname, fragment), ConfigFragmentRegistry::GetInstance()->GetItems()) {
-		Expression *expression = ConfigCompiler::CompileText(fname, fragment);
-		if (expression) {
-			ScriptFrame frame;
-			expression->Evaluate(frame);
-			delete expression;
-		}
-	}
-
-	ConfigType::Ptr ctype = ConfigType::GetByName(type);
-
-	if (!ctype)
-		Log(LogCritical, "cli")
-		    << "No validation type available for '" << type << "'.";
-	else {
-		Dictionary::Ptr vattrs = attrs->ShallowClone();
-		vattrs->Set("__name", vattrs->Get("name"));
-		vattrs->Remove("name");
-		vattrs->Remove("import");
-		vattrs->Set("type", type);
-
-		Type::Ptr dtype = Type::GetByName(type);
-
-		Object::Ptr object = dtype->Instantiate();
-		Deserialize(object, vattrs, false, FAConfig);
-
-		RepositoryTypeRuleUtilities utils;
-		ctype->ValidateItem(name, object, DebugInfo(), &utils);
-
-		int warnings = 0, errors = 0;
-
-		BOOST_FOREACH(const ConfigCompilerMessage& message, ConfigCompilerContext::GetInstance()->GetMessages()) {
-			String logmsg = String("Config ") + (message.Error ? "error" : "warning") + ": " + message.Text;
-
-			if (message.Error) {
-				Log(LogCritical, "config", logmsg);
-				errors++;
-			} else {
-				Log(LogWarning, "config", logmsg);
-				warnings++;
-			}
-		}
-
-		if (errors > 0)
-			return false;
+	try {
+		Object::Ptr object = utype->Instantiate();
+		Deserialize(object, attrs, false, FAConfig);
+		static_pointer_cast<DynamicObject>(object)->Validate(RepositoryValidationUtils());
+	} catch (const ScriptError& ex) {
+		Log(LogCritical, "config", DiagnosticInformation(ex));
+		return false;
 	}
 
 	if (CheckChangeExists(change)) {
@@ -386,9 +345,9 @@ bool RepositoryUtility::WriteObjectToRepositoryChangeLog(const String& path, con
 
 	String tempPath = path + ".tmp";
 
-        std::ofstream fp(tempPath.CStr(), std::ofstream::out | std::ostream::trunc);
-        fp << JsonEncode(item);
-        fp.close();
+	std::ofstream fp(tempPath.CStr(), std::ofstream::out | std::ostream::trunc);
+	fp << JsonEncode(item);
+	fp.close();
 
 #ifdef _WIN32
 	_unlink(path.CStr());
@@ -526,10 +485,10 @@ bool RepositoryUtility::WriteObjectToRepository(const String& path, const String
 
 	String tempPath = path + ".tmp";
 
-        std::ofstream fp(tempPath.CStr(), std::ofstream::out | std::ostream::trunc);
-        SerializeObject(fp, name, type, item);
+	std::ofstream fp(tempPath.CStr(), std::ofstream::out | std::ostream::trunc);
+	SerializeObject(fp, name, type, item);
 	fp << std::endl;
-        fp.close();
+	fp.close();
 
 #ifdef _WIN32
 	_unlink(path.CStr());
@@ -741,39 +700,39 @@ void RepositoryUtility::SerializeObject(std::ostream& fp, const String& name, co
 
 void RepositoryUtility::FormatValue(std::ostream& fp, const Value& val)
 {
-        if (val.IsObjectType<Array>()) {
-                FormatArray(fp, val);
-                return;
-        }
+	if (val.IsObjectType<Array>()) {
+		FormatArray(fp, val);
+		return;
+	}
 
-        if (val.IsString()) {
-                fp << "\"" << Convert::ToString(val) << "\"";
-                return;
-        }
+	if (val.IsString()) {
+		fp << "\"" << Convert::ToString(val) << "\"";
+		return;
+	}
 
-        fp << Convert::ToString(val);
+	fp << Convert::ToString(val);
 }
 
 void RepositoryUtility::FormatArray(std::ostream& fp, const Array::Ptr& arr)
 {
-        bool first = true;
+	bool first = true;
 
-        fp << "[ ";
+	fp << "[ ";
 
-        if (arr) {
-                ObjectLock olock(arr);
-                BOOST_FOREACH(const Value& value, arr) {
-                        if (first)
-                                first = false;
-                        else
-                                fp << ", ";
+	if (arr) {
+		ObjectLock olock(arr);
+		BOOST_FOREACH(const Value& value, arr) {
+			if (first)
+				first = false;
+			else
+				fp << ", ";
 
-                        FormatValue(fp, value);
-                }
-        }
+			FormatValue(fp, value);
+		}
+	}
 
-        if (!first)
-                fp << " ";
+	if (!first)
+		fp << " ";
 
-        fp << "]";
+	fp << "]";
 }

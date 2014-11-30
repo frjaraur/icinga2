@@ -32,6 +32,7 @@
 #include "base/scriptvariable.hpp"
 #include "base/workqueue.hpp"
 #include "base/context.hpp"
+#include "base/application.hpp"
 #include <fstream>
 #include <boost/foreach.hpp>
 #include <boost/exception/errinfo_api_function.hpp>
@@ -54,16 +55,6 @@ DynamicObject::DynamicObject(void)
 DynamicType::Ptr DynamicObject::GetType(void) const
 {
 	return DynamicType::GetByName(GetTypeName());
-}
-
-DebugInfo DynamicObject::GetDebugInfo(void) const
-{
-	return m_DebugInfo;
-}
-
-void DynamicObject::SetDebugInfo(const DebugInfo& di)
-{
-	m_DebugInfo = di;
 }
 
 bool DynamicObject::IsActive(void) const
@@ -311,7 +302,7 @@ void DynamicObject::RestoreObjects(const String& filename, int attributeTypes)
 
 	unsigned long restored = 0;
 
-	ParallelWorkQueue upq;
+	WorkQueue upq(25000, Application::GetConcurrency());
 
 	String message;
 	while (NetString::ReadStringFromStream(sfp, &message)) {

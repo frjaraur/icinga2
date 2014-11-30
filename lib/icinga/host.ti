@@ -38,4 +38,10 @@ class Host : Checkable
 	[config] String address6;
 };
 
+validator Host {
+	Array groups {
+		name(HostGroup) "*";
+	};
+};
+
 }

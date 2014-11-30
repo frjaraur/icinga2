@@ -22,6 +22,7 @@
 #include "config/configcompilercontext.hpp"
 #include "base/json.hpp"
 #include "base/console.hpp"
+#include "base/exception.hpp"
 #include <iostream>
 
 using namespace icinga;
@@ -69,20 +70,9 @@ int ReplCommand::Run(const po::variables_map& vm, const std::vector<std::string>
 		Expression *expr;
 
 		try {
-			ConfigCompilerContext::GetInstance()->Reset();
-
 			expr = ConfigCompiler::CompileText("<console>", line);
 
-			bool has_errors = false;
-
-			BOOST_FOREACH(const ConfigCompilerMessage& message, ConfigCompilerContext::GetInstance()->GetMessages()) {
-				if (message.Error)
-					has_errors = true;
-
-				std::cout << (message.Error ? "Error" : "Warning") << ": " << message.Text << "\n";
-			}
-
-			if (expr && !has_errors) {
+			if (expr) {
 				Value result = expr->Evaluate(frame);
 				std::cout << ConsoleColorTag(Console_ForegroundCyan);
 				if (!result.IsObject() || result.IsObjectType<Array>() || result.IsObjectType<Dictionary>())

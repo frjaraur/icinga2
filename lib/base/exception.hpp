@@ -25,6 +25,7 @@
 #include "base/stacktrace.hpp"
 #include "base/context.hpp"
 #include "base/utility.hpp"
+#include "base/debuginfo.hpp"
 #include <sstream>
 #include <boost/exception/errinfo_api_function.hpp>
 #include <boost/exception/errinfo_errno.hpp>
@@ -53,14 +54,61 @@ I2_BASE_API void RethrowUncaughtException(void);
 typedef boost::error_info<StackTrace, StackTrace> StackTraceErrorInfo;
 typedef boost::error_info<ContextTrace, ContextTrace> ContextTraceErrorInfo;
 
+/*
+ * @ingroup base
+ */
+class I2_BASE_API ScriptError : virtual public user_error
+{
+public:
+	ScriptError(const String& message)
+		: m_Message(message)
+	{ }
+
+	ScriptError(const String& message, const DebugInfo& di)
+		: m_Message(message), m_DebugInfo(di)
+	{ }
+
+	~ScriptError(void) throw()
+	{ }
+
+	virtual inline const char *what(void) const throw()
+	{
+		return m_Message.CStr();
+	}
+
+	inline DebugInfo GetDebugInfo(void) const
+	{
+		return m_DebugInfo;
+	}
+
+private:
+	String m_Message;
+	DebugInfo m_DebugInfo;
+};
+
 template<typename T>
 String DiagnosticInformation(const T& ex, StackTrace *stack = NULL, ContextTrace *context = NULL)
 {
 	std::ostringstream result;
 
-	result << boost::diagnostic_information(ex);
+	const user_error *uex = dynamic_cast<const user_error *>(&ex);
 
-	if (dynamic_cast<const user_error *>(&ex) == NULL) {
+	String message = ex.what();
+
+	if (!uex || message.IsEmpty())
+		result << boost::diagnostic_information(ex);
+	else
+		result << "Error: " << message << "\n";
+
+	const ScriptError *dex = dynamic_cast<const ScriptError *>(&ex);
+
+	if (dex) {
+		result << "Location:\n";
+		ShowCodeFragment(result, dex->GetDebugInfo());
+		result << "\n";
+	}
+
+	if (!uex) {
 		if (boost::get_error_info<StackTraceErrorInfo>(ex) == NULL) {
 			result << std::endl;
 

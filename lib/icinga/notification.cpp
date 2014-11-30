@@ -20,7 +20,6 @@
 #include "icinga/notification.hpp"
 #include "icinga/notificationcommand.hpp"
 #include "icinga/service.hpp"
-#include "config/configcompilercontext.hpp"
 #include "base/objectlock.hpp"
 #include "base/logger.hpp"
 #include "base/utility.hpp"
@@ -28,13 +27,11 @@
 #include "base/exception.hpp"
 #include "base/initialize.hpp"
 #include "base/scriptvariable.hpp"
-#include "base/scriptfunction.hpp"
 #include <boost/foreach.hpp>
 
 using namespace icinga;
 
 REGISTER_TYPE(Notification);
-REGISTER_SCRIPTFUNCTION(ValidateNotificationFilters, &Notification::ValidateFilters);
 INITIALIZE_ONCE(&Notification::StaticInitialize);
 
 boost::signals2::signal<void (const Notification::Ptr&, double, const MessageOrigin&)> Notification::OnNextNotificationChanged;
@@ -250,8 +247,8 @@ void Notification::BeginExecuteNotification(NotificationType type, const CheckRe
 				    << "Not sending notifications for notification object '" << GetName() << "': before escalation range";
 
 				/* we need to adjust the next notification time
- 				 * to now + begin delaying the first notification
- 				 */
+				 * to now + begin delaying the first notification
+				 */
 				double nextProposedNotification = now + times->Get("begin") + 1.0;
 				if (GetNextNotification() > nextProposedNotification)
 					SetNextNotification(nextProposedNotification);
@@ -496,32 +493,28 @@ int icinga::FilterArrayToInt(const Array::Ptr& typeFilters, int defaultValue)
 	return resultTypeFilter;
 }
 
-void Notification::ValidateFilters(const String& location, const Notification::Ptr& object)
+void Notification::Validate(const ValidationUtils& utils) const
 {
-	int sfilter = FilterArrayToInt(object->GetStates(), 0);
+	ObjectImpl<Notification>::Validate(utils);
 
-	if (object->GetServiceName().IsEmpty() && (sfilter & ~(StateFilterUp | StateFilterDown)) != 0) {
-		ConfigCompilerContext::GetInstance()->AddMessage(true, "Validation failed for " +
-		    location + ": State filter is invalid.");
+	int sfilter = FilterArrayToInt(GetStates(), 0);
+
+	if (GetServiceName().IsEmpty() && (sfilter & ~(StateFilterUp | StateFilterDown)) != 0) {
+		BOOST_THROW_EXCEPTION(ScriptError("Validation failed: State filter is invalid.", GetDebugInfo()));
 	}
 
-	if (!object->GetServiceName().IsEmpty() && (sfilter & ~(StateFilterOK | StateFilterWarning | StateFilterCritical | StateFilterUnknown)) != 0) {
-		ConfigCompilerContext::GetInstance()->AddMessage(true, "Validation failed for " +
-		    location + ": State filter is invalid.");
-	}
+	if (!GetServiceName().IsEmpty() && (sfilter & ~(StateFilterOK | StateFilterWarning | StateFilterCritical | StateFilterUnknown)) != 0)
+		BOOST_THROW_EXCEPTION(ScriptError("Validation failed: State filter is invalid.", GetDebugInfo()));
 
-	int tfilter = FilterArrayToInt(object->GetTypes(), 0);
+	int tfilter = FilterArrayToInt(GetTypes(), 0);
 
 	if ((tfilter & ~(1 << NotificationDowntimeStart | 1 << NotificationDowntimeEnd | 1 << NotificationDowntimeRemoved |
 	    1 << NotificationCustom | 1 << NotificationAcknowledgement | 1 << NotificationProblem | 1 << NotificationRecovery |
-	    1 << NotificationFlappingStart | 1 << NotificationFlappingEnd)) != 0) {
-		ConfigCompilerContext::GetInstance()->AddMessage(true, "Validation failed for " +
-		    location + ": Type filter is invalid.");
-	}
+	    1 << NotificationFlappingStart | 1 << NotificationFlappingEnd)) != 0)
+		BOOST_THROW_EXCEPTION(ScriptError("Validation failed: Type filter is invalid.", GetDebugInfo()));
 }
 
 Endpoint::Ptr Notification::GetCommandEndpoint(void) const
 {
 	return Endpoint::GetByName(GetCommandEndpointRaw());
 }
-

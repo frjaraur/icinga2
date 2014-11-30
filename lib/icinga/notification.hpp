@@ -109,7 +109,7 @@ public:
 
 	static void RegisterApplyRuleHandler(void);
 
-	static void ValidateFilters(const String& location, const Notification::Ptr& object);
+	virtual void Validate(const ValidationUtils& utils) const;
 
 	static void EvaluateApplyRules(const intrusive_ptr<Host>& host);
 	static void EvaluateApplyRules(const intrusive_ptr<Service>& service);
